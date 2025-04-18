@@ -19,4 +19,9 @@ CPU Usage: 0.00%
 Memory Usage: 1291.70 MB
 GPU Memory Usage: 17621.69 MB / 32768.00 MB
 GPU Utilization: 99%
-Exp 1 Training RGB (Dynamic_Layers3):   6%|████▌                                                                        | 3/50 [1:37:01<25:34:45, 1959.27s/it]
+Exp 1 Training RGB (Dynamic_Layers3):   6%|████▌                                          [RGB] (Dynamic_Layers3) Exp 1 Epoch 4: Train Loss: 3.4522, Train Acc: 0.1058, Val Loss: 3.3186, Val Acc: 0.1444, Precision: 0.0916, Recall: 0.1444, F1: 0.1020, Learning Rate: 0.000991
+CPU Usage: 0.00%
+Memory Usage: 1292.50 MB
+GPU Memory Usage: 17621.69 MB / 32768.00 MB
+GPU Utilization: 86%
+Exp 1 Training RGB (Dynamic_Layers3):   8%|██████▏                                                                      | 4/50 [2:11:13<25:30:22, 1996.14s/it]
