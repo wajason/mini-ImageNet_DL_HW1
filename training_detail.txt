@@ -1,0 +1,22 @@
+=== Training with RGB channels ===
+
+Training Dynamic Model...
+
+Ablation Study: RGB (Dynamic) - Layers: 3
+[RGB (Dynamic_Layers3)] Complexity: FLOPS: 67.76 MMac, Parameters: 394.49 k
+Exp 1 Training RGB (Dynamic_Layers3):   0%|                                                                                            | 0/50 [00:00<?, ?it/s][RGB] (Dynamic_Layers3) Exp 1 Epoch 1: Train Loss: 3.7379, Train Acc: 0.0593, Val Loss: 3.5451, Val Acc: 0.0867, Precision: 0.0382, Recall: 0.0867, F1: 0.0467, Learning Rate: 0.001000
+CPU Usage: 0.00%
+Memory Usage: 1290.88 MB
+GPU Memory Usage: 16287.69 MB / 32768.00 MB
+GPU Utilization: 56%
+Exp 1 Training RGB (Dynamic_Layers3):   2%|█▌                                                                             | 1/50 [31:31<25:45:06, 1891.97s/it][RGB] (Dynamic_Layers3) Exp 1 Epoch 2: Train Loss: 3.5821, Train Acc: 0.0832, Val Loss: 3.5141, Val Acc: 0.1000, Precision: 0.0633, Recall: 0.1000, F1: 0.0611, Learning Rate: 0.000999
+CPU Usage: 0.00%
+Memory Usage: 1291.49 MB
+GPU Memory Usage: 16729.69 MB / 32768.00 MB
+GPU Utilization: 83%
+Exp 1 Training RGB (Dynamic_Layers3):   4%|███                                                                          | 2/50 [1:02:57<25:10:20, 1887.93s/it][RGB] (Dynamic_Layers3) Exp 1 Epoch 3: Train Loss: 3.5101, Train Acc: 0.0972, Val Loss: 3.4318, Val Acc: 0.1000, Precision: 0.0713, Recall: 0.1000, F1: 0.0626, Learning Rate: 0.000996
+CPU Usage: 0.00%
+Memory Usage: 1291.70 MB
+GPU Memory Usage: 17621.69 MB / 32768.00 MB
+GPU Utilization: 99%
+Exp 1 Training RGB (Dynamic_Layers3):   6%|████▌                                                                        | 3/50 [1:37:01<25:34:45, 1959.27s/it]
