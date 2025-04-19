@@ -53,6 +53,6 @@ val_dataset = MiniImageNetDataset("data/val.txt", "data", transform=transform_va
 test_dataset = MiniImageNetDataset("data/test.txt", "data", transform=transform_val)
 
 # 數據加載
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=12)
-val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=12)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=12)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=8)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=8)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=8)

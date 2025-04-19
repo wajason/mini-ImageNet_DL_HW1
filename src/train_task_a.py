@@ -69,7 +69,7 @@ def plot_confusion_matrix(y_true, y_pred, channel_name, model_type):
     plt.savefig(os.path.join(curve_plot_dir, f"confusion_matrix_{channel_name}_{model_type}.png"))
     plt.close()
 
-def train_and_evaluate(in_channels=3, channel_name="RGB", use_dynamic=True, num_layers=5, epochs=50, num_experiments=3):
+def train_and_evaluate(in_channels=3, channel_name="RGB", use_dynamic=True, num_layers=5, epochs=25, num_experiments=3):
     # 儲存多次實驗的結果
     test_accuracies, test_losses = [], []
     precisions, recalls, f1_scores = [], [], []
@@ -284,7 +284,7 @@ if __name__ == "__main__":
                     channel_name=channel_name,
                     use_dynamic=use_dynamic,
                     num_layers=num_layers,
-                    epochs=50,
+                    epochs=25,
                     num_experiments=3
                 )
                 (mean_test_acc, std_test_acc, mean_test_loss, std_test_loss,

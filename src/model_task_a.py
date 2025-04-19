@@ -9,15 +9,12 @@ class DynamicConv(nn.Module):
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.stride = stride if isinstance(stride, int) else tuple(stride)
-        self.K = K  # 候選卷積核數量
+        self.K = K  # 候選特徵加權數量
 
-        # 候選卷積核參數
-        self.weight = nn.Parameter(
-            torch.randn(K, out_channels, in_channels, kernel_size, kernel_size)
-        )
-        self.bias = nn.Parameter(torch.randn(K, out_channels))
+        # 標準卷積層，處理整個批次
+        self.conv = nn.Conv2d(in_channels, out_channels * K, kernel_size, stride=stride, padding=kernel_size//2)
 
-        # 注意力網路：為每個樣本生成獨立的權重
+        # 注意力網路：為每個樣本生成 K 個加權係數
         self.attention = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),  # 全局平均池化
             nn.Flatten(),
@@ -29,31 +26,21 @@ class DynamicConv(nn.Module):
 
     def forward(self, x):
         batch_size, in_channels, height, width = x.size()
-        assert in_channels == self.in_channels, "Input channels mismatch"
+        assert in_channels == self.in_channels, f"Input channels mismatch: expected {self.in_channels}, got {in_channels}"
 
         # 計算注意力權重（每個樣本獨立）
         attn_weights = self.attention(x)  # (batch_size, K)
 
-        # 動態生成卷積核
-        weights = self.weight.view(self.K, -1)  # (K, out_channels * in_channels * kernel_size * kernel_size)
-        attn_weights_for_weights = attn_weights.view(batch_size, self.K, 1)  # (batch_size, K, 1)
-        dynamic_weight = (attn_weights_for_weights * weights).sum(dim=1)  # (batch_size, out_channels * in_channels * kernel_size * kernel_size)
-        dynamic_weight = dynamic_weight.view(batch_size, self.out_channels, self.in_channels, self.kernel_size, self.kernel_size)
+        # 標準卷積，輸出 K 組特徵圖
+        out = self.conv(x)  # (batch_size, out_channels * K, height, width)
 
-        # 動態生成偏置
-        attn_weights_for_bias = attn_weights.view(batch_size, self.K, 1)  # (batch_size, K, 1)
-        dynamic_bias = (attn_weights_for_bias * self.bias.unsqueeze(0)).sum(dim=1)  # (batch_size, out_channels)
+        # 將輸出拆分為 K 組特徵圖
+        out = out.view(batch_size, self.out_channels, self.K, height, width)  # (batch_size, out_channels, K, height, width)
 
-        # 對每個樣本進行卷積
-        out = torch.zeros(batch_size, self.out_channels, height, width, device=x.device)
-        for i in range(batch_size):
-            out[i] = F.conv2d(
-                x[i:i+1],
-                dynamic_weight[i],
-                bias=dynamic_bias[i],
-                stride=self.stride,
-                padding=self.kernel_size//2
-            )
+        # 應用注意力權重，對 K 組特徵圖加權求和
+        attn_weights = attn_weights.view(batch_size, 1, self.K, 1, 1)  # (batch_size, 1, K, 1, 1)
+        out = (out * attn_weights).sum(dim=2)  # (batch_size, out_channels, height, width)
+
         return out
 
 class TaskAModel(nn.Module):
