@@ -1,0 +1,10 @@
+# .gitignore
+data/*
+*.pt
+curve_plot/*
+curve_plot_A/*
+curve_plot_B/*
+*.jpg
+*.png
+*.jpeg
+*.whl
