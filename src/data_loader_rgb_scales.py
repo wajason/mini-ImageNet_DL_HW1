@@ -107,7 +107,7 @@ for size in sizes:
     }
 
     loaders[size] = {
-        'train': DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=12),
-        'val': DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=12),
-        'test': DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=12)
+        'train': DataLoader(train_dataset, batch_size=12, shuffle=True, num_workers=15, pin_memory=True), 
+        'val': DataLoader(val_dataset, batch_size=12, shuffle=False, num_workers=15, pin_memory=True),
+        'test': DataLoader(test_dataset, batch_size=12, shuffle=False, num_workers=15, pin_memory=True)
     }

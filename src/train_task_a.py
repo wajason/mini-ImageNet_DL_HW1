@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import os
 from tqdm import tqdm
-from model_task_a import ConvNet, DynamicConvNet
+from model_task_a import ConvNet, DynamicConvNet, DynamicConvNet_3Layer, DynamicConvNet_2Layer
 from data_loader_rgb_scales import datasets, loaders, mixup_data
 import psutil
 import pynvml
@@ -16,7 +16,7 @@ curve_plot_dir = "/home/wajason99/mini-ImageNet_DL_HW1/curve_plot_A"
 os.makedirs(curve_plot_dir, exist_ok=True)
 
 # 設置設備
-torch.set_num_threads(12)
+torch.set_num_threads(15)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 初始化 GPU 監控
@@ -68,16 +68,64 @@ class WarmupCosineAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
             ]
         return lr
 
-def train_and_evaluate(model, model_name, size, epochs=30):
+# 通道組合測試函數
+def test_channel_combinations(model_class, test_loader, size, model_name, state_dict):
+    channel_combinations = {
+        'RGB': [0, 1, 2],
+        'RG': [0, 1],
+        'GB': [1, 2],
+        'RB': [0, 2],
+        'R': [0],
+        'G': [1],
+        'B': [2]
+    }
+    results = {}
+
+    for combo_name, channels in channel_combinations.items():
+        # 動態創建模型，根據通道數調整 in_channels
+        in_channels = len(channels)
+        if model_name == "ConvNet":
+            model = model_class(in_channels=in_channels, num_classes=50).to(device)
+        else:
+            model = model_class(in_channels=in_channels, num_classes=50, K=2).to(device)
+        
+        # 載入訓練好的權重，僅更新匹配的部分
+        model_dict = model.state_dict()
+        pretrained_dict = {k: v for k, v in state_dict.items() if k in model_dict and model_dict[k].shape == v.shape}
+        model_dict.update(pretrained_dict)
+        model.load_state_dict(model_dict)
+
+        model.eval()
+        test_acc, test_loss = 0.0, 0.0
+        test_preds, test_labels = [], []
+        with torch.no_grad():
+            for images, labels in test_loader:
+                images = images[:, channels, :, :]  # 選擇指定通道
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                loss = F.cross_entropy(outputs, labels)
+                test_loss += loss.item()
+                preds = outputs.argmax(dim=1)
+                test_acc += (preds == labels).float().mean().item()
+                test_preds.extend(preds.cpu().numpy())
+                test_labels.extend(labels.cpu().numpy())
+
+        test_loss /= len(test_loader)
+        test_acc /= len(test_loader)
+        test_precision, test_recall, test_f1, _ = precision_recall_fscore_support(test_labels, test_preds, average='weighted', zero_division=0)
+        
+        results[combo_name] = (test_acc, test_precision, test_recall, test_f1)
+        print(f"[{model_name}] Size {size} - {combo_name} Channels: Test Acc: {test_acc:.4f}, Precision: {test_precision:.4f}, Recall: {test_recall:.4f}, F1: {test_f1:.4f}")
+
+    return results
+
+def train_and_evaluate(model_class, model_name, size, epochs=5):
     torch.cuda.empty_cache()
     
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.05, momentum=0.9, weight_decay=4e-5)
-    scheduler = WarmupCosineAnnealingLR(optimizer, warmup_epochs=5, total_epochs=epochs, eta_min=0)
-    
-    # 梯度累積設置
-    accum_steps = 2
-    effective_batch_size = 64
-    actual_batch_size = effective_batch_size // accum_steps
+    # 訓練時使用 3 通道（RGB）
+    model = model_class(in_channels=3, num_classes=50).to(device) if model_name == "ConvNet" else model_class(in_channels=3, num_classes=50, K=2).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=4e-5)  # 學習率提高到 0.001
+    scheduler = WarmupCosineAnnealingLR(optimizer, warmup_epochs=2, total_epochs=epochs, eta_min=0)
     
     train_losses, val_losses = [], []
     train_accuracies, val_accuracies = [], []
@@ -85,13 +133,12 @@ def train_and_evaluate(model, model_name, size, epochs=30):
     best_model_state = None
 
     # tau 退火
-    initial_tau = 30.0
+    initial_tau = 12.0
     final_tau = 1.0
-    tau_steps = 5  # 前 5 個 epoch 退火
+    tau_steps = epochs
 
     for epoch in tqdm(range(epochs), desc=f"Training {model_name} (Size {size})"):
-        # 更新 tau
-        if epoch < tau_steps and isinstance(model, DynamicConvNet):
+        if epoch < tau_steps and isinstance(model, (DynamicConvNet, DynamicConvNet_3Layer, DynamicConvNet_2Layer)):
             tau = initial_tau - (initial_tau - final_tau) * (epoch / tau_steps)
             model.set_tau(tau)
 
@@ -101,29 +148,19 @@ def train_and_evaluate(model, model_name, size, epochs=30):
         for i, (images, labels) in enumerate(loaders[size]['train']):
             images, labels = images.to(device), labels.to(device)
             
-            # Mixup 數據增強
-            if np.random.rand() < 0.5:
-                images, labels_a, labels_b, lam = mixup_data(images, labels, alpha=1.0)
-            else:
-                labels_a, labels_b, lam = labels, labels, 1.0
+            # Mixup 使用率提高到 100%
+            images, labels_a, labels_b, lam = mixup_data(images, labels, alpha=1.0)
 
             outputs = model(images)
             loss = lam * F.cross_entropy(outputs, labels_a) + (1 - lam) * F.cross_entropy(outputs, labels_b)
-            loss = loss / accum_steps
             loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-            if (i + 1) % accum_steps == 0:
-                optimizer.step()
-                optimizer.zero_grad()
-
-            loss_train += loss.item() * accum_steps
+            loss_train += loss.item()
             preds = outputs.argmax(dim=1)
             acc = lam * (preds == labels_a).float().mean().item() + (1 - lam) * (preds == labels_b).float().mean().item()
             acc_train += acc
-
-        if (i + 1) % accum_steps != 0:
-            optimizer.step()
-            optimizer.zero_grad()
 
         loss_train /= len(loaders[size]['train'])
         acc_train /= len(loaders[size]['train'])
@@ -164,6 +201,7 @@ def train_and_evaluate(model, model_name, size, epochs=30):
 
     torch.save(best_model_state, os.path.join(curve_plot_dir, f"best_model_{model_name}_size{size}.pt"))
 
+    # 測試階段（RGB 通道）
     model.eval()
     test_acc, test_loss = 0.0, 0.0
     test_preds, test_labels = [], []
@@ -180,12 +218,14 @@ def train_and_evaluate(model, model_name, size, epochs=30):
 
     test_loss /= len(loaders[size]['test'])
     test_acc /= len(loaders[size]['test'])
-    
     test_precision, test_recall, test_f1, _ = precision_recall_fscore_support(test_labels, test_preds, average='weighted', zero_division=0)
     
     print(f"[{model_name}] Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, "
           f"Test Precision: {test_precision:.4f}, Test Recall: {test_recall:.4f}, Test F1: {test_f1:.4f}, "
           f"Best Val Acc: {best_val_acc:.4f}")
+
+    # 通道組合測試（僅在 224x224 尺寸下執行）
+    channel_results = test_channel_combinations(model_class, loaders[size]['test'], size, model_name, best_model_state)
 
     plt.figure(figsize=(10, 6))
     plt.plot(range(1, epochs + 1), train_losses, label="Train Loss")
@@ -207,37 +247,82 @@ def train_and_evaluate(model, model_name, size, epochs=30):
     plt.savefig(os.path.join(curve_plot_dir, f"accuracy_curve_{model_name}_size{size}.png"))
     plt.close()
 
-    return test_acc, best_val_acc, test_precision, test_recall, test_f1
+    return test_acc, best_val_acc, test_precision, test_recall, test_f1, channel_results
 
 if __name__ == "__main__":
-    results = {}
-    sizes = [224, 112, 56]
+    # 檢查數據集檔案
+    for txt_file in ["data/train.txt", "data/val.txt", "data/test.txt"]:
+        with open(txt_file, 'r') as f:
+            for line in f:
+                image_path, _ = line.strip().split()
+                assert os.path.exists(os.path.join("data", image_path)), f"Image {image_path} not found!"
+    print("All image paths verified successfully.")
 
+    results = {}
+    sizes = [224]
+
+    # 訓練與測試
     for size in sizes:
         results[size] = {}
         
+        # 註解掉 ConvNet 相關部分
+        """
         # 訓練 ConvNet
-        conv_net = ConvNet(num_classes=50).to(device)
-        flops, params = get_model_stats(conv_net, size)
+        flops, params = get_model_stats(ConvNet(in_channels=3, num_classes=50).to(device), size)
         print(f"\n[ConvNet] Size {size} - FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
-        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(conv_net, f"ConvNet", size, epochs=30)
-        results[size]["ConvNet"] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params)
+        test_acc, val_acc, test_precision, test_recall, test_f1, channel_results = train_and_evaluate(ConvNet, "ConvNet", size, epochs=5)
+        results[size]["ConvNet"] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, channel_results)
+        """
 
         # 訓練 DynamicConvNet
-        dynamic_conv_net = DynamicConvNet(num_classes=50, K=4).to(device)
-        flops, params = get_model_stats(dynamic_conv_net, size)
+        flops, params = get_model_stats(DynamicConvNet(in_channels=3, num_classes=50, K=2).to(device), size)
         print(f"\n[DynamicConvNet] Size {size} - FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
-        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(dynamic_conv_net, f"DynamicConvNet", size, epochs=30)
-        results[size]["DynamicConvNet"] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params)
+        test_acc, val_acc, test_precision, test_recall, test_f1, channel_results = train_and_evaluate(DynamicConvNet, "DynamicConvNet", size, epochs=5)
+        results[size]["DynamicConvNet"] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, channel_results)
+
+    # Ablation Study（僅在 224x224 尺寸下）
+    size = 224
+    ablation_results = {}
+    
+    # 訓練 DynamicConvNet_3Layer
+    flops, params = get_model_stats(DynamicConvNet_3Layer(in_channels=3, num_classes=50, K=2).to(device), size)
+    print(f"\n[DynamicConvNet_3Layer] Size {size} - FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
+    test_acc, val_acc, test_precision, test_recall, test_f1, channel_results = train_and_evaluate(DynamicConvNet_3Layer, "DynamicConvNet_3Layer", size, epochs=5)
+    ablation_results["DynamicConvNet_3Layer"] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, channel_results)
+
+    # 訓練 DynamicConvNet_2Layer
+    flops, params = get_model_stats(DynamicConvNet_2Layer(in_channels=3, num_classes=50, K=2).to(device), size)
+    print(f"\n[DynamicConvNet_2Layer] Size {size} - FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
+    test_acc, val_acc, test_precision, test_recall, test_f1, channel_results = train_and_evaluate(DynamicConvNet_2Layer, "DynamicConvNet_2Layer", size, epochs=5)
+    ablation_results["DynamicConvNet_2Layer"] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, channel_results)
 
     # 最終性能比較
     for size in sizes:
         print(f"\nFinal Performance Comparison (Size {size}):")
         for model_name in results[size]:
-            test_acc, val_acc, test_precision, test_recall, test_f1, flops, params = results[size][model_name]
+            test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, _ = results[size][model_name]
             print(f"{model_name} Test Acc: {test_acc:.4f}, Val Acc: {val_acc:.4f}, "
                   f"Precision: {test_precision:.4f}, Recall: {test_recall:.4f}, F1: {test_f1:.4f}, "
                   f"FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
+
+    # 通道組合比較（224x224）
+    print("\nChannel Combination Comparison (Size 224):")
+    for model_name in results[224]:
+        print(f"\n{model_name}:")
+        channel_results = results[224][model_name][-1]
+        for combo_name, (acc, precision, recall, f1) in channel_results.items():
+            print(f"{combo_name} - Test Acc: {acc:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+
+    # Ablation Study 結果
+    print("\nAblation Study (DynamicConvNet Layers, Size 224):")
+    for model_name in ["DynamicConvNet", "DynamicConvNet_3Layer", "DynamicConvNet_2Layer"]:
+        if model_name == "DynamicConvNet":
+            test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, _ = results[224][model_name]
+        else:
+            test_acc, val_acc, test_precision, test_recall, test_f1, flops, params, _ = ablation_results[model_name]
+        print(f"{model_name} Test Acc: {test_acc:.4f}, Val Acc: {val_acc:.4f}, "
+              f"Precision: {test_precision:.4f}, Recall: {test_recall:.4f}, F1: {test_f1:.4f}, "
+              f"FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
 
     if gpu_handle:
         pynvml.nvmlShutdown()
