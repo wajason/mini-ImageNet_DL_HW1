@@ -63,7 +63,8 @@ mini-ImageNet_DL_HW1/
 
 3. **Install Dependencies**
    ```bash
-   pip install -r requirement.py
+ pip install torch==2.0.0 torchvision==0.15.0
+ pip install thop==0.1.1 matplotlib==3.7.0 tqdm==4.65.0 psutil==5.9.0 pynvml==11.5.0 scikit-learn==1.2.0
    ```
 
 4. **Prepare Mini-ImageNet Dataset**
