@@ -35,7 +35,6 @@ mini-ImageNet_DL_HW1/
 - **Memory**: At least 16GB RAM and 12GB GPU memory.
 
 ### Software
-- **OS**: Ubuntu 20.04 or later (Windows/MacOS may work but untested).
 - **Python**: 3.11
 - **Conda**: For environment management.
 - **Dependencies**:
@@ -64,12 +63,10 @@ mini-ImageNet_DL_HW1/
 
 3. **Install Dependencies**
    ```bash
-   pip install torch==2.0.0 torchvision==0.15.0
-   pip install thop==0.1.1 matplotlib==3.7.0 tqdm==4.65.0 psutil==5.9.0 pynvml==11.5.0 scikit-learn==1.2.0
+   pip install -r requirement.py
    ```
 
 4. **Prepare Mini-ImageNet Dataset**
-   - Download the mini-ImageNet dataset and place it in the `data/` directory.
    - Ensure the structure is:
      ```
      data/
