@@ -11,7 +11,10 @@ import pynvml
 from sklearn.metrics import precision_recall_fscore_support
 import numpy as np
 from torchvision import transforms
-from torch.utils.data import Dataset, DataLoader # 數據集和數據加載器
+from torch.utils.data import Dataset, DataLoader
+from torchvision.models import resnet34
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # 設置儲存路徑
 curve_plot_dir = "/home/wajason99/mini-ImageNet_DL_HW1/curve_plot_B"
@@ -35,7 +38,7 @@ def count_parameters(model):
     return total_params / 1e6
 
 # 計算 FLOPS 和參數量
-def get_model_stats(model, input_size=(3, 224, 224)):  # 確保圖像大小為 224x224
+def get_model_stats(model, input_size=(3, 224, 224)):
     from thop import profile
     model.eval()
     input_tensor = torch.randn(1, *input_size).to(device)
@@ -75,27 +78,27 @@ class WarmupCosineAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
         else:
             cosine_epoch = self.last_epoch - self.warmup_epochs
             cosine_total = self.total_epochs - self.warmup_epochs
-            lr = [
-                self.eta_min + (base_lr - self.eta_min) *
-                (1 + np.cos(np.pi * cosine_epoch / cosine_total)) / 2
-                for base_lr in self.base_lrs
-            ]
+            # 避免除以零
+            if cosine_total == 0:
+                lr = [self.eta_min for base_lr in self.base_lrs]
+            else:
+                lr = [
+                    self.eta_min + (base_lr - self.eta_min) *
+                    (1 + np.cos(np.pi * cosine_epoch / cosine_total)) / 2
+                    for base_lr in self.base_lrs
+                ]
         return lr
 
-def train_and_evaluate(model, model_name="Model", epochs=5, batch_size=128):
+def train_and_evaluate(model, model_name="Model", epochs=5, batch_size=32):
     torch.cuda.empty_cache()
     
     # 動態設置 DataLoader 的 batch_size
-    train_loader.batch_size = batch_size
-    val_loader.batch_size = batch_size
-    test_loader.batch_size = batch_size
+    train_loader_loader = DataLoader(train_loader.dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader_loader = DataLoader(val_loader.dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    test_loader_loader = DataLoader(test_loader.dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
     
-    train_loader_loader = DataLoader(train_loader.dataset, batch_size=batch_size, shuffle=True, num_workers=8)
-    val_loader_loader = DataLoader(val_loader.dataset, batch_size=batch_size, shuffle=False, num_workers=8)
-    test_loader_loader = DataLoader(test_loader.dataset, batch_size=batch_size, shuffle=False, num_workers=8)
-    
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-4)
-    scheduler = WarmupCosineAnnealingLR(optimizer, warmup_epochs=5, total_epochs=epochs, eta_min=0)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
+    scheduler = WarmupCosineAnnealingLR(optimizer, warmup_epochs=3, total_epochs=epochs, eta_min=0)  # warmup_epochs 改為 2
     
     scaler = torch.amp.GradScaler('cuda')
 
@@ -112,8 +115,12 @@ def train_and_evaluate(model, model_name="Model", epochs=5, batch_size=128):
         model.train()
         loss_train, acc_train = 0.0, 0.0
         optimizer.zero_grad()
+        batch_count = 0  # 用於計算 batch 數量以控制顯示頻率
+        running_loss = 0.0  # 累積 loss
+        running_acc = 0.0  # 累積 accuracy
+
         for i, (images, labels) in enumerate(train_loader_loader):
-            print(f"[{model_name}] Processing batch {i+1}/{len(train_loader_loader)}")
+            batch_count += 1
             images, labels = images.to(device), labels.to(device)
 
             with torch.amp.autocast('cuda'):
@@ -127,7 +134,18 @@ def train_and_evaluate(model, model_name="Model", epochs=5, batch_size=128):
             loss_train += loss.item()
             preds = outputs.argmax(dim=1)
             acc_train += (preds == labels).float().mean().item()
-            print(f"[{model_name}] Batch {i+1} loss: {loss.item():.4f}")
+
+            running_loss += loss.item()
+            running_acc += (preds == labels).float().mean().item()
+
+            # 每 500 個 batch 顯示一次進度
+            if batch_count % 500 == 0 or batch_count == len(train_loader_loader):
+                avg_loss = running_loss / min(500, batch_count)
+                avg_acc = running_acc / min(500, batch_count)
+                print(f"[{model_name}] Epoch {epoch+1}, Batch {batch_count}/{len(train_loader_loader)}, "
+                      f"Avg Loss: {avg_loss:.4f}, Avg Acc: {avg_acc:.4f}")
+                running_loss = 0.0  # 重置累積值
+                running_acc = 0.0
 
         loss_train /= len(train_loader_loader)
         acc_train /= len(train_loader_loader)
@@ -213,60 +231,54 @@ def train_and_evaluate(model, model_name="Model", epochs=5, batch_size=128):
     plt.savefig(os.path.join(curve_plot_dir, f"accuracy_curve_{model_name}.png"))
     plt.close()
 
-    # 釋放記憶體
-    del model
-    torch.cuda.empty_cache()
-
     return test_acc, best_val_acc, test_precision, test_recall, test_f1
 
 if __name__ == "__main__":
-
-    # 訓練 ResNet34（已完成，註解掉）
+    # 初始化結果字典
+    results = {}
     """
+    # 訓練 ResNet34
     resnet = resnet34(weights=None, num_classes=50).to(device)
     resnet_flops, resnet_params = get_model_stats(resnet)
-    resnet_acc, resnet_val_acc, resnet_precision, resnet_recall, resnet_f1 = train_and_evaluate(resnet, "ResNet34", epochs=5)
+    print(f"\n[ResNet34] FLOPS: {resnet_flops:.2f} GFLOPS, Params: {resnet_params:.2f} M")
+    resnet_acc, resnet_val_acc, resnet_precision, resnet_recall, resnet_f1 = train_and_evaluate(resnet, "ResNet34", epochs=5, batch_size=32)  # batch_size 改為 512
+    results["ResNet34"] = (resnet_acc, resnet_val_acc, resnet_precision, resnet_recall, resnet_f1, resnet_flops, resnet_params)
+    torch.cuda.empty_cache()
     """
-
-    resnet_acc = 0.4355
-    resnet_val_acc = 0.5059
-    resnet_precision = 0.5230
-    resnet_recall = 0.4956
-    resnet_f1 = 0.4704
-
     # 為 WideCNN、GCNModel 和 BiGCNModel 使用更大的 batch_size
     models_high_batch = [
-        ("WideCNN", WideCNN(num_classes=50).to(device)),
-        ("GCNModel", GCNModel(in_feats=128, hid_feats=256, num_classes=50).to(device)),
-        ("BiGCNModel", BiGCNModel(in_feats=128, hid_feats=256, num_classes=50).to(device))
+       # ("WideCNN", WideCNN(num_classes=50).to(device)),
+       # ("GCNModel", GCNModel(in_feats=128, hid_feats=256, num_classes=50).to(device)),
+       # ("BiGCNModel", BiGCNModel(in_feats=128, hid_feats=256, num_classes=50).to(device))
     ]
 
     # 為 AttnCNN 和 WideAttnCNN 使用較小的 batch_size
     models_low_batch = [
-        ("AttnCNN", AttnCNN(num_classes=50).to(device)),
-        ("WideAttnCNN", WideAttnCNN(num_classes=50).to(device))
+        # ("AttnCNN", AttnCNN(num_classes=50).to(device)),
+        # ("WideAttnCNN", WideAttnCNN(num_classes=50).to(device))
     ]
 
-    results = {
-        "WideCNN": (widecnn_acc, widecnn_val_acc, widecnn_precision, widecnn_recall, widecnn_f1, widecnn_flops, widecnn_params)
-    }
-
+    """
     # 訓練 WideCNN、GCNModel 和 BiGCNModel
     for model_name, model in models_high_batch:
         torch.cuda.empty_cache()
         flops, params = get_model_stats(model)
         print(f"\n[{model_name}] FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
-        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(model, model_name, epochs=5, batch_size=128)
+        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(model, model_name, epochs=5, batch_size=24)  # batch_size 改為 512
         results[model_name] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params)
+        torch.cuda.empty_cache()
 
     # 訓練 AttnCNN 和 WideAttnCNN
     for model_name, model in models_low_batch:
         torch.cuda.empty_cache()
         flops, params = get_model_stats(model)
         print(f"\n[{model_name}] FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
-        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(model, model_name, epochs=5, batch_size=2)
+        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(model, model_name, epochs=5, batch_size=1)  # batch_size 改為 48
         results[model_name] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params)
+        torch.cuda.empty_cache()
+    """
 
+    # 消融實驗
     ablation_models = [
         ("WideCNN_2Layer", WideCNN_2Layer(num_classes=50).to(device)),
         ("AttnCNN_NoAttn", AttnCNN_NoAttn(num_classes=50).to(device)),
@@ -277,15 +289,21 @@ if __name__ == "__main__":
         torch.cuda.empty_cache()
         flops, params = get_model_stats(model)
         print(f"\n[{model_name}] FLOPS: {flops:.2f} GFLOPS, Params: {params:.2f} M")
-        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(model, model_name, epochs=5, batch_size=128)
+        test_acc, val_acc, test_precision, test_recall, test_f1 = train_and_evaluate(model, model_name, epochs=5, batch_size=24)  # batch_size 改為 512
         results[model_name] = (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params)
+        torch.cuda.empty_cache()
 
     print("\nFinal Performance Comparison (Validation Set):")
+    resnet_val_acc = results["ResNet34"][1]
     print(f"ResNet34 Val Acc: {resnet_val_acc:.4f}")
     for model_name, (test_acc, val_acc, _, _, _, _, _) in results.items():
         print(f"{model_name} Val Acc: {val_acc:.4f}, Relative to ResNet34: {(val_acc / resnet_val_acc) * 100:.2f}%")
 
     print("\nFinal Performance Comparison (Test Set):")
+    resnet_acc = results["ResNet34"][0]
+    resnet_precision = results["ResNet34"][2]
+    resnet_recall = results["ResNet34"][3]
+    resnet_f1 = results["ResNet34"][4]
     print(f"ResNet34 Test Acc: {resnet_acc:.4f}, Precision: {resnet_precision:.4f}, Recall: {resnet_recall:.4f}, F1: {resnet_f1:.4f}")
     for model_name, (test_acc, val_acc, test_precision, test_recall, test_f1, flops, params) in results.items():
         print(f"{model_name} Test Acc: {test_acc:.4f}, Precision: {test_precision:.4f}, Recall: {test_recall:.4f}, F1: {test_f1:.4f}, "

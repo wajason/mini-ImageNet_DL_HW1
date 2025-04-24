@@ -1,12 +1,11 @@
-import os              # 處理檔案和目錄操作
-import torch           # 深度學習框架
-import pandas as pd    # 數據處理和分析
-import numpy as np     # 數值計算
-import random          # 隨機數生成
-from PIL import Image  # 圖像處理
-from torch.utils.data import Dataset, DataLoader # 數據集和數據加載器
-import torchvision.transforms as transforms      # 圖像轉換
-
+import os
+import torch
+import pandas as pd
+import numpy as np
+import random
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
 
 # 定義 Cutout 數據增強
 class Cutout(object):
@@ -49,11 +48,8 @@ def mixup_data(x, y, alpha=1.0):
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
 
-
-
-# 定義一個數據集類，用於加載 mini-ImageNet 數據集
+# 定義數據集類
 class MiniImageNetDataset(Dataset):
-    # 初始化函數
     def __init__(self, txt_file, image_dir, transform=None):
         self.image_dir = image_dir
         self.transform = transform
@@ -63,11 +59,9 @@ class MiniImageNetDataset(Dataset):
                 image_path, label = line.strip().split()
                 self.data.append((image_path, int(label)))
 
-    # 獲取數據集的大小
     def __len__(self):
         return len(self.data)
 
-    # 獲取指定索引的數據
     def __getitem__(self, idx):
         image_path, label = self.data[idx]
         image = Image.open(os.path.join(self.image_dir, image_path)).convert('RGB')
@@ -77,14 +71,14 @@ class MiniImageNetDataset(Dataset):
 
 # 資料增強
 transform_train = transforms.Compose([
-    transforms.Resize((224, 224)),     # 調整大小為 224x224
-    transforms.RandomHorizontalFlip(), # 隨機水平翻轉
-    transforms.RandomRotation(15),     # 隨機旋轉 15 度
-    transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3), # 隨機顏色抖動
-    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)), # 隨機平移
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(15),
+    transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3),
+    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.4799, 0.4597, 0.3874], std=[0.2098, 0.2032, 0.1980]), # 正規化
-    Cutout(n_holes=1, length=32)  # 添加 Cutout
+    transforms.Normalize(mean=[0.4799, 0.4597, 0.3874], std=[0.2098, 0.2032, 0.1980]),
+    Cutout(n_holes=1, length=32)
 ])
 
 transform_val = transforms.Compose([
@@ -98,7 +92,7 @@ train_dataset = MiniImageNetDataset("data/train.txt", "data", transform=transfor
 val_dataset = MiniImageNetDataset("data/val.txt", "data", transform=transform_val)
 test_dataset = MiniImageNetDataset("data/test.txt", "data", transform=transform_val)
 
-# 數據加載
-train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=8)
-val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=8)
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8)
+# 數據加載（batch_size 將在 train_task_b.py 中動態設置）
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
