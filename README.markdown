@@ -14,9 +14,10 @@ mini-ImageNet_DL_HW1/
 ├── src/
 │   ├── model_task_a.py         # Model definitions for Task A (ConvNet, DynamicConvNet, etc.)
 │   ├── train_task_a.py         # Training and evaluation script for Task A
-│   ├── data_loader_rgb_scales.py  # Data loader for mini-ImageNet with channel combinations
+│   ├── data_loader_rgb_scales.py  # Data loader for Task A with channel combinations
 │   ├── model_task_b.py         # Model definitions for Task B (placeholder)
 │   ├── train_task_b.py         # Training and evaluation script for Task B (placeholder)
+│   ├── data_loader.py  # Data loader for Task B
 ├── data/
 │   ├── train.txt               # Training image paths and labels
 │   ├── val.txt                 # Validation image paths and labels
