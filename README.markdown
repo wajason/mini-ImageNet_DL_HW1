@@ -3,9 +3,9 @@
 This repository contains the implementation for Homework 1 of the Deep Learning course, focusing on image classification using the mini-ImageNet dataset. The project includes two tasks:
 
 - **Task A**: Implementation of `ConvNet` and `DynamicConvNet` models, training with Mixup augmentation, and evaluation on different channel combinations (RGB, RG, GB, RB, R, G, B).
-- **Task B**: [Placeholder - Implementation of additional models or tasks, e.g., advanced architectures or techniques; replace with specific Task B description].
+- **Task B**: Design a network using CNN, Transformer, or RNN architectures with 2 to 4 effective layers that achievesat least 90% of the performance of a ResNet34 model on the ImageNet-mini dataset.
 
-The code is implemented in Python using PyTorch and evaluated on an NVIDIA RTX 3090 GPU.
+The code is implemented in Python using PyTorch and evaluated on Tesla V100S-PCIE-32GB.
 
 ## Repository Structure
 
@@ -31,7 +31,7 @@ mini-ImageNet_DL_HW1/
 ## Prerequisites
 
 ### Hardware
-- **GPU**: NVIDIA GPU with CUDA support (e.g., RTX 3090) recommended for faster training.
+- **GPU**: NVIDIA GPU with CUDA support recommended for faster training.
 - **CPU**: Multi-core CPU for data loading.
 - **Memory**: At least 16GB RAM and 12GB GPU memory.
 
@@ -64,8 +64,8 @@ mini-ImageNet_DL_HW1/
 
 3. **Install Dependencies**
    ```bash
- pip install torch==2.0.0 torchvision==0.15.0
- pip install thop==0.1.1 matplotlib==3.7.0 tqdm==4.65.0 psutil==5.9.0 pynvml==11.5.0 scikit-learn==1.2.0
+   pip install torch==2.0.0 torchvision==0.15.0
+   pip install thop==0.1.1 matplotlib==3.7.0 tqdm==4.65.0 psutil==5.9.0 pynvml==11.5.0 scikit-learn==1.2.0
    ```
 
 4. **Prepare Mini-ImageNet Dataset**
@@ -123,7 +123,7 @@ Task A trains and evaluates `ConvNet`, `DynamicConvNet`, `DynamicConvNet_3Layer`
 
 ## Running Task B
 
-Task B involves [Placeholder - e.g., training advanced models or different techniques on mini-ImageNet; replace with specific Task B description]. The implementation is in `model_task_b.py` and `train_task_b.py`.
+Task B involves Design a network using CNN, Transformer, or RNN architectures with 2 to 4 effective layers that achievesat least 90% of the performance of a ResNet34 model on the ImageNet-mini dataset. The implementation is in `model_task_b.py` and `train_task_b.py`.
 
 ### Instructions
 1. **Navigate to the Source Directory**
@@ -143,12 +143,6 @@ Task B involves [Placeholder - e.g., training advanced models or different techn
      - Training logs with performance metrics.
      - Model weights saved to `curve_plot_B/best_model_[model_name]_size224.pt`.
      - Plots saved to `curve_plot_B/`.
-
-3. **Expected Results**
-   - [Placeholder - Replace with expected metrics, e.g., Test Acc, FLOPS, Params for Task B models].
-
-4. **Training Time**
-   - ~1-2 hours on RTX 3090 (adjust based on Task B complexity).
 
 ## Reproducing Experiments
 
